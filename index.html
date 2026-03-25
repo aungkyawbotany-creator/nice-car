@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Full Screen Arcade Car Game</title>
+<style>
+body{margin:0;overflow:hidden;background:#222;font-family:Arial;}
+canvas{display:block;background:#444;}
+button{position:absolute;font-size:24px;padding:10px;border-radius:10px;border:none;}
+#left{bottom:20px;left:20px;}
+#right{bottom:20px;left:120px;}
+#replay{top:10px;right:10px;display:none;}
+#shopToggle{bottom:20px;right:20px;}
+#shop{position:absolute;bottom:80px;right:20px;background:#ccc;padding:10px;border-radius:10px;display:none;}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<button id="left">⬅️</button>
+<button id="right">➡️</button>
+<button id="replay">Replay</button>
+<button id="shopToggle">Shop</button>
+<div id="shop"></div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let W=window.innerWidth, H=window.innerHeight;
+canvas.width=W; canvas.height=H;
+
+let car, obstacles=[], coinsObj=[], roadLines=[], explosions=[];
+let score=0, bestScore=parseInt(localStorage.getItem("bestScore"))||0, coins=parseInt(localStorage.getItem("coins"))||0;
+let speed=5, moveLeft=false, moveRight=false, gameOver=false;
+let carColor=localStorage.getItem("carColor")||"green";
+
+const availableColors=[
+{color:"green", price:0},{color:"blue", price:10},{color:"red", price:20},{color:"purple", price:30},{color:"yellow", price:50}
+];
+
+function init(){
+  car={x:W/2-40/2,y:H-120,width:40,height:80,speed:7};
+  obstacles=[];coinsObj=[];explosions=[];roadLines=[];
+  
+  for(let i=0;i<Math.ceil(H/30);i++) roadLines.push({x:W/2-10,y:i*30,width:20,height:20});
+  
+  score=0;speed=5;gameOver=false;
+}
+
+// Car
+function drawCar(){
+  if(gameOver) return;
+  ctx.fillStyle=carColor;
+  ctx.fillRect(car.x,car.y+10,car.width,car.height-20);
+  ctx.fillRect(car.x+8,car.y,car.width-16,20);
+  ctx.fillStyle="skyblue";
+  ctx.fillRect(car.x+12,car.y+2,car.width-24,16);
+  ctx.fillStyle="black";
+  ctx.fillRect(car.x-4,car.y+15,8,18);
+  ctx.fillRect(car.x+car.width-4,car.y+15,8,18);
+  ctx.fillRect(car.x-4,car.y+45,8,18);
+  ctx.fillRect(car.x+car.width-4,car.y+45,8,18);
+  ctx.fillStyle="yellow";
+  ctx.fillRect(car.x+6,car.y+car.height-12,6,6);
+  ctx.fillRect(car.x+car.width-12,car.y+car.height-12,6,6);
+}
+
+// Obstacles
+function spawnObstacle(){
+  let w=Math.random()*100+30;
+  let x=Math.random()*(W-w);
+  obstacles.push({x:x,y:-20,width:w,height:20});
+}
+function drawObstacles(){
+  ctx.fillStyle="red";
+  obstacles.forEach(o=>ctx.fillRect(o.x,o.y,o.width,o.height));
+}
+
+// Coins
+function spawnCoin(){
+  coinsObj.push({x:Math.random()*(W-20),y:-20,size:20,angle:0});
+}
+function drawCoins(){
+  coinsObj.forEach(c=>{
+    c.angle+=0.2;
+    ctx.save();
+    ctx.translate(c.x+c.size/2,c.y+c.size/2);
+    ctx.rotate(c.angle);
+    ctx.fillStyle="gold";
+    ctx.beginPath();
+    ctx.arc(0,0,c.size/2,0,Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle="#b8860b";
+    ctx.lineWidth=3;
+    ctx.stroke();
+    ctx.fillStyle="white";
+    ctx.beginPath();
+    ctx.arc(-c.size/4,-c.size/4,c.size/6,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+// Road lines
+function drawRoadLines(){
+  ctx.fillStyle="white";
+  roadLines.forEach(line=>{
+    line.y+=speed;
+    if(line.y>H) line.y=-20;
+    ctx.fillRect(line.x,line.y,line.width,line.height);
+  });
+}
+
+// Explosions
+function createExplosion(x,y){
+  for(let i=0;i<20;i++){
+    explosions.push({x:x+20,y:y+40,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,r:Math.random()*5+2,life:30});
+  }
+}
+function drawExplosions(){
+  explosions.forEach((e,i)=>{
+    ctx.fillStyle="orange";
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+    ctx.fill();
+    e.x+=e.vx;e.y+=e.vy;e.life--;
+    if(e.life<=0) explosions.splice(i,1);
+  });
+}
+
+// Shop
+const shopEl=document.getElementById("shop");
+document.getElementById("shopToggle").onclick=()=>{
+  shopEl.style.display=(shopEl.style.display==="none")?"block":"none";
+  showShop();
+};
+function showShop(){
+  shopEl.innerHTML="";
+  availableColors.forEach(c=>{
+    const btn=document.createElement("button");
+    btn.textContent=c.color+" - "+c.price+" coins";
+    btn.onclick=()=>{
+      if(coins>=c.price){
+        coins-=c.price;
+        carColor=c.color;
+        localStorage.setItem("coins",coins);
+        localStorage.setItem("carColor",carColor);
+        showShop();
+      } else alert("Not enough coins!");
+    };
+    shopEl.appendChild(btn);
+  });
+}
+
+// Update game
+function update(){
+  ctx.clearRect(0,0,W,H);
+  if(!gameOver){
+    if(moveLeft&&car.x>0) car.x-=car.speed;
+    if(moveRight&&car.x+car.width<W) car.x+=car.speed;
+    
+    drawRoadLines();
+    drawCar();
+    drawObstacles();
+    drawCoins();
+    drawExplosions();
+    
+    obstacles.forEach(o=>o.y+=speed);
+    coinsObj.forEach(c=>c.y+=speed);
+    
+    // Collisions
+    obstacles.forEach(o=>{
+      let p=10;
+      if(car.x+p<o.x+o.width-p && car.x+car.width-p>o.x+p &&
+         car.y+p<o.y+o.height-p && car.y+car.height-p>o.y+p){
+        gameOver=true;
+        createExplosion(car.x,car.y);
+        document.getElementById("replay").style.display="block";
+        if(score>bestScore){bestScore=score;localStorage.setItem("bestScore",bestScore);}
+      }
+    });
+    
+    // Collect coins
+    coinsObj.forEach((c,i)=>{
+      if(car.x<c.x+c.size && car.x+car.width>c.x &&
+         car.y<c.y+c.size && car.y+car.height>c.y){
+        coins++; localStorage.setItem("coins",coins);
+        coinsObj.splice(i,1);
+      }
+    });
+    
+    // Draw score
+    ctx.fillStyle="white";
+    ctx.font="20px Arial";
+    ctx.fillText("Score: "+score,10,30);
+    ctx.fillText("Best: "+bestScore,10,60);
+    ctx.fillText("Coins: "+coins,10,90);
+    
+    requestAnimationFrame(update);
+  } else {
+    // Crash Message
+    ctx.fillStyle="red";
+    ctx.font="40px Arial";
+    ctx.textAlign="center";
+    ctx.fillText("ပြည့်စုံအောင်", W/2, H/2);
+  }
+}
+
+// Controls
+function setupButton(btn,direction){
+  btn.addEventListener("touchstart",e=>{e.preventDefault();direction(true);});
+  btn.addEventListener("touchend",e=>{e.preventDefault();direction(false);});
+  btn.addEventListener("mousedown",e=>{e.preventDefault();direction(true);});
+  btn.addEventListener("mouseup",e=>{e.preventDefault();direction(false);});
+  btn.addEventListener("mouseleave",e=>{e.preventDefault();direction(false);});
+}
+setupButton(document.getElementById("left"),state=>moveLeft=state);
+setupButton(document.getElementById("right"),state=>moveRight=state);
+
+// Timers
+setInterval(()=>{if(!gameOver) score++;},1000);
+setInterval(()=>{if(!gameOver) speed+=0.5;},10000);
+setInterval(()=>{if(!gameOver) spawnObstacle();},1200);
+setInterval(()=>{if(!gameOver) spawnCoin();},2500);
+
+// Replay
+document.getElementById("replay").onclick=()=>{
+  init();
+  document.getElementById("replay").style.display="none";
+  update();
+};
+
+// Resize
+window.addEventListener("resize",()=>{
+  W=window.innerWidth; H=window.innerHeight;
+  canvas.width=W; canvas.height=H;
+  init();
+});
+
+init(); update();
+</script>
+</body>
+</html>
